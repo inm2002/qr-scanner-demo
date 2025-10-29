@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- 
-      cdnjs 上的版本是 0.20.0。
+      cdnjs 上的正确版本是 0.20.0。
     -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-library/0.20.0/zxing.min.js"></script>
     
@@ -135,5 +135,92 @@
 
                     const minX = Math.min(...points.map(p => p.x));
                     const minY = Math.min(...points.map(p => p.y));
-                    const maxX = Math.max(...points.map(p =>
+                    const maxX = Math.max(...points.map(p => p.x));
+                    const maxY = Math.max(...points.map(p => p.y));
+                    
+                    const left = minX * scaleX;
+                    const top = minY * scaleY;
+                    const width = (maxX - minX) * scaleX;
+                    const height = (maxY - minY) * scaleY;
+
+                    const box = document.createElement('div');
+                    box.className = 'qr-box';
+                    box.style.left = `${left}px`;
+                    box.style.top = `${top}px`;
+                    box.style.width = `${width}px`;
+                    box.style.height = `${height}px`;
+
+                    const text = result.getText();
+                    box.onclick = (e) => {
+                        e.stopPropagation(); // 防止点击穿透
+                        showModal('扫描结果', text);
+                    };
+                    
+                    overlay.appendChild(box);
+                });
+            }
+
+            /**
+             * 循环扫描视频帧
+             */
+            async function scanFrame() {
+                if (video.readyState < video.HAVE_CURRENT_DATA) {
+                    return; 
+                }
+                
+                try {
+                    const results = await codeReader.decodeMultipleFromVideoElement(video);
+                    drawOverlays(results);
+                    
+                } catch (err) {
+                    if (err instanceof NotFoundException) {
+                        drawOverlays([]); 
+                    } else {
+                        console.error('扫描出错:', err);
+                    }
+                }
+            }
+
+            /**
+             * 启动摄像头
+             */
+            async function startCamera() {
+                try {
+                    const constraints = {
+                        video: { 
+                            facingMode: 'environment' 
+                        },
+                        audio: false
+                    };
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    video.srcObject = stream;
+                    
+                    // 【修复】
+                    // 使用 onplaying 事件，它在视频真正开始播放时触发
+                    // 这比 oncanplay 更可靠
+                    video.onplaying = () => {
+                        statusEl.textContent = '摄像头已启动，请对准二维码。';
+                        // 每 300ms 扫一次，省电
+                        setInterval(scanFrame, 300);
+                    };
+
+                } catch (err) {
+                    console.error("摄像头启动失败:", err);
+                    if (err.name === 'NotAllowedError') {
+                        statusEl.textContent = '错误：用户拒绝了摄像头权限。';
+                    } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
+                        statusEl.textContent = '错误：找不到后置摄像头。';
+                    } else {
+                        statusEl.textContent = `错误：摄像头启动失败 (${err.message})。`;
+                    }
+                }
+            }
+
+            startCamera();
+
+        });
+    </script>
+</body>
+</html>
 
