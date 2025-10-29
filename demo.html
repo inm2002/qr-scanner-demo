@@ -26,6 +26,19 @@
         }
         .qr-box:hover { background-color: rgba(0, 255, 0, 0.3); }
         body { overflow: hidden; }
+        /* 日志区域样式 */
+        #log-area {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #00FF00;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 0.8em;
+            z-index: 20;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white font-sans flex flex-col items-center justify-center min-h-screen p-4">
@@ -38,6 +51,8 @@
             <video id="video" playsinline autoplay muted class="w-full h-full object-cover"></video>
             <!-- 绿色框框会画在这一层 -->
             <div id="overlay" class="absolute top-0 left-0 w-full h-full"></div>
+            <!-- 添加日志显示区域 -->
+            <div id="log-area">等待扫描...</div>
         </div>
         
         <div id="controls" class="text-center mt-4">
@@ -119,10 +134,12 @@
                 // 摄像头就绪, 停止轮询
                 clearInterval(scanInterval);
                 const statusEl = document.getElementById('status'); 
+                const logArea = document.getElementById('log-area'); // 获取日志区域
 
                 // 检查 ZXing 库是否加载成功
                 if (typeof ZXing === 'undefined') {
                     statusEl.textContent = '错误：扫描库(index.min.js)加载失败！';
+                    logArea.textContent = '错误: 库加载失败'; // 在页面上显示错误
                     return;
                 }
 
@@ -212,13 +229,19 @@
                         // 核心: 使用 decodeMultiple 识别多个码
                         const results = await codeReader.decodeMultipleFromVideoElement(video);
                         drawOverlays(results);
+                        // 更新日志区域
+                        logArea.textContent = `检测到 ${results.length} 个二维码`; 
                         
                     } catch (err) {
                         if (err instanceof NotFoundException) {
                             // 未找到码, 清除旧边框
                             drawOverlays([]); 
+                            // 更新日志区域
+                            logArea.textContent = '未检测到二维码'; 
                         } else {
                             // 忽略其他错误
+                            console.error("扫描时出错:", err); // 在控制台打印其他错误
+                            logArea.textContent = '扫描出错'; 
                         }
                     }
                 }
@@ -231,5 +254,4 @@
     </script>
 </body>
 </html>
-
 
