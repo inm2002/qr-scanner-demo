@@ -7,10 +7,10 @@
     <!-- 引入 Tailwind CSS 框架 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 
-      加载本地 ZXing 扫描库 (v0.20.0)
-      确保 zxing.min.js 和此 html 文件在同一目录
+      加载本地扫描库 (v0.20.0)
+      确保 index.min.js 和此 html 文件在同一目录
     -->
-    <script src="./zxing.min.js"></script>
+    <script src="./index.min.js"></script>
     
     <style>
         video { z-index: -1; }
@@ -122,7 +122,7 @@
 
                 // 检查 ZXing 库是否加载成功
                 if (typeof ZXing === 'undefined') {
-                    statusEl.textContent = '错误：扫描库(zxing.min.js)加载失败！';
+                    statusEl.textContent = '错误：扫描库(index.min.js)加载失败！';
                     return;
                 }
 
@@ -231,4 +231,5 @@
     </script>
 </body>
 </html>
+
 
