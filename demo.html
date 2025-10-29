@@ -155,12 +155,12 @@
 
                 // 从 ZXing 获取所需类
                 const { 
-                    BrowserMultiFormatReader, // 仍然用它来管理视频流和创建 BinaryBitmap
+                    // BrowserMultiFormatReader, // 不再需要它做核心解码
                     NotFoundException,
-                    DecodeHintType,           // 可能需要 hints
-                    HTMLCanvasElementLuminanceSource, // 用于从 Canvas 创建 LuminanceSource
-                    HybridBinarizer,          // Binarizer
-                    BinaryBitmap,             // BinaryBitmap
+                    DecodeHintType,           
+                    HTMLCanvasElementLuminanceSource, 
+                    HybridBinarizer,          
+                    BinaryBitmap,             
                     MultiFormatReader         // 核心 Reader
                 } = ZXing;
 
@@ -201,8 +201,8 @@
                     }
                 };
 
-                // 绘制边框 (这个函数基本不变)
-                function drawOverlays(results) {
+                // 修改：绘制边框 (现在只处理单个结果)
+                function drawOverlays(result) { // 参数改为单个 result
                     overlay.innerHTML = '';
                     const videoRect = video.getBoundingClientRect(); 
                     const videoWidth = video.videoWidth; 
@@ -215,46 +215,50 @@
                     const scaleX = videoRect.width / videoWidth;
                     const scaleY = videoRect.height / videoHeight;
 
-                    results.forEach(result => {
-                        const points = result.resultPoints;
-                        if (!points || points.length < 3) return; 
-                        
-                        const minX = Math.min(...points.map(p => p.x));
-                        const minY = Math.min(...points.map(p => p.y));
-                        const maxX = Math.max(...points.map(p => p.x));
-                        const maxY = Math.max(...points.map(p => p.y));
-                        
-                        const left = minX * scaleX;
-                        const top = minY * scaleY;
-                        const width = (maxX - minX) * scaleX;
-                        const height = (maxY - minY) * scaleY;
+                    // --- 只处理单个 result ---
+                    const points = result.resultPoints;
+                    if (!points || points.length < 3) return; 
+                    
+                    const minX = Math.min(...points.map(p => p.x));
+                    const minY = Math.min(...points.map(p => p.y));
+                    const maxX = Math.max(...points.map(p => p.x));
+                    const maxY = Math.max(...points.map(p => p.y));
+                    
+                    const left = minX * scaleX;
+                    const top = minY * scaleY;
+                    const width = (maxX - minX) * scaleX;
+                    const height = (maxY - minY) * scaleY;
 
-                        const box = document.createElement('div');
-                        box.className = 'qr-box';
-                        box.style.left = `${left}px`;
-                        box.style.top = `${top}px`;
-                        box.style.width = `${width}px`;
-                        box.style.height = `${height}px`;
+                    const box = document.createElement('div');
+                    box.className = 'qr-box';
+                    box.style.left = `${left}px`;
+                    box.style.top = `${top}px`;
+                    box.style.width = `${width}px`;
+                    box.style.height = `${height}px`;
 
-                        const text = result.getText();
-                        box.onclick = (e) => {
-                            e.stopPropagation(); 
-                            showModal('扫描结果', text);
-                        };
-                        
-                        overlay.appendChild(box);
-                    });
+                    const text = result.getText();
+                    box.onclick = (e) => {
+                        e.stopPropagation(); 
+                        showModal('扫描结果', text);
+                    };
+                    
+                    overlay.appendChild(box);
+                    // --- 结束处理单个 result ---
+                }
+                
+                // 清除所有边框的函数
+                function clearOverlays() {
+                    overlay.innerHTML = '';
                 }
 
-                // 修改：使用底层的多码识别流程
+
+                // 修改：使用底层的单码识别流程 decode()
                 function scanFrame() {
                     // 检查视频是否准备好
                     if (video.readyState < video.HAVE_CURRENT_DATA || video.paused || video.ended || !video.videoWidth || !video.videoHeight) {
                         return; 
                     }
                     
-                    let results = []; // 存储当前帧的解码结果
-
                     try {
                         // 1. 设置离屏 Canvas 尺寸与视频一致
                         captureCanvas.width = video.videoWidth;
@@ -264,34 +268,26 @@
                         captureContext.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
                         
                         // 3. 从 Canvas 创建 LuminanceSource
-                        //    v0.20.0 确实有 HTMLCanvasElementLuminanceSource
                         const luminanceSource = new HTMLCanvasElementLuminanceSource(captureCanvas);
                         
                         // 4. 创建 BinaryBitmap
                         const binarizer = new HybridBinarizer(luminanceSource);
                         const binaryBitmap = new BinaryBitmap(binarizer);
                         
-                        // 5. 使用 multiFormatReader.decodeMultiple() 进行多码识别
-                        results = multiFormatReader.decodeMultiple(binaryBitmap, hints);
+                        // 5. 使用 multiFormatReader.decode() 进行单码识别
+                        const result = multiFormatReader.decode(binaryBitmap, hints); // <--- 改动在这里
 
-                        // 6. 处理结果
-                        drawOverlays(results);
-                        logArea.textContent = `检测到 ${results.length} 个二维码`; 
+                        // 6. 处理结果 (单个 result)
+                        drawOverlays(result); // <--- 传递单个 result
+                        logArea.textContent = `检测到 1 个二维码`; // <--- 现在总是 1 或 0
                         logArea.classList.add('scan-ok');
                         
                     } catch (err) {
-                        // 只有当没有成功解码任何码时, 才处理 NotFoundException
+                        // 处理 NotFoundException
                         if (err instanceof NotFoundException) {
-                           if (results.length === 0) { // 确保是真的没找到, 而不是找到一些后抛出
-                                drawOverlays([]); 
-                                logArea.textContent = '未检测到二维码'; 
-                                logArea.classList.add('scan-ok'); 
-                           } else {
-                                // 如果之前已经找到了一些码, 即使后面抛了NotFoundException, 也显示找到的
-                                drawOverlays(results);
-                                logArea.textContent = `检测到 ${results.length} 个二维码 (可能有未识别)`; 
-                                logArea.classList.add('scan-ok');
-                           }
+                            clearOverlays(); // 清除之前的框
+                            logArea.textContent = '未检测到二维码'; 
+                            logArea.classList.add('scan-ok'); 
                         } else {
                             // 其他错误
                             console.error("扫描时出错:", err); 
@@ -299,7 +295,7 @@
                             logArea.classList.remove('scan-ok'); 
                         }
                     } finally {
-                        // 重置 multiFormatReader 状态, 准备下一帧 (重要!)
+                        // 重置 multiFormatReader 状态, 准备下一帧 (对于 decode 可能也需要)
                         multiFormatReader.reset(); 
                     }
                 }
