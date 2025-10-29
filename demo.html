@@ -6,18 +6,9 @@
     <title>多二维码扫描Demo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 
-      【最终修复-现代版】
-      我们不再需要从 <head> 加载任何 zxing.min.js 文件。
-      我们将在下面的 <script type="module"> 标签中直接导入 (import) 这个库。
-    -->
-    
     <style>
-        /* 强制视频在最底层 */
-        video {
-            z-index: -1;
-        }
-        /* 识别框样式 */
+        /* ... 样式部分没有改变 ... */
+        video { z-index: -1; }
         .qr-box {
             position: absolute;
             border: 3px solid #00FF00;
@@ -27,13 +18,8 @@
             transition: background-color 0.2s;
             z-index: 10;
         }
-        .qr-box:hover {
-            background-color: rgba(0, 255, 0, 0.3);
-        }
-        /* 隐藏页面滚动条 */
-        body {
-            overflow: hidden;
-        }
+        .qr-box:hover { background-color: rgba(0, 255, 0, 0.3); }
+        body { overflow: hidden; }
     </style>
 </head>
 <body class="bg-gray-900 text-white font-sans flex flex-col items-center justify-center min-h-screen p-4">
@@ -46,16 +32,11 @@
             <div id="overlay" class="absolute top-0 left-0 w-full h-full"></div>
         </div>
         
-        <!-- 
-          【修复】
-          添加一个“开始”按钮，并默认隐藏状态文本。
-          这是解决手机浏览器权限问题的关键。
-        -->
         <div id="controls" class="text-center mt-4">
             <button id="start-scan-btn" class="w-full max-w-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded transition text-lg">
                 开始扫描
             </button>
-            <p id="status" class="text-center text-gray-400 mt-4 hidden">正在请求摄像头权限...</p>
+            <p id="status" class="text-center text-gray-400 mt-4 hidden">请点击开始扫描</p>
         </div>
     </div>
 
@@ -73,155 +54,41 @@
 
 
     <!-- 
-      【重大修改】
-      我们使用 type="module"，这允许我们使用 import 语法。
+      【重大修复】
+      我们把代码分成了两个脚本。
     -->
-    <script type="module">
     
-        // 【重大修改】
-        // 我们从一个稳定的 CDN 直接导入库的最新版本。
-        // 这取代了所有旧的 <script src="..."> 标签和本地文件。
-        import { 
-            BrowserMultiFormatReader, 
-            NotFoundException 
-        } from 'https://cdn.jsdelivr.net/npm/@zxing/library@latest/esm/index.js';
-
-
-        // --- 剩下的代码和原来一样，但现在能保证库已加载 ---
+    <script>
+        // 【脚本 1：只管摄像头】
+        // 这是一个普通的脚本，它不依赖任何外部库，保证能运行。
+        // 它的唯一职责：响应点击，打开摄像头。
+        window.isCameraReady = false; // 全局标志
 
         window.addEventListener('load', () => {
-
             const video = document.getElementById('video');
-            const overlay = document.getElementById('overlay');
             const statusEl = document.getElementById('status');
-            const modal = document.getElementById('modal');
-            const modalTitle = document.getElementById('modal-title');
-            const modalContent = document.getElementById('modal-content');
-            const closeModalBtn = document.getElementById('close-modal');
-            const startScanBtn = document.getElementById('start-scan-btn'); // 【修复】获取按钮
-            
-            // 我们不再需要检查 typeof ZXing，因为 import 成功就意味着库已加载。
-            // 如果 import 失败，会在控制台看到一个模块加载错误。
+            const startScanBtn = document.getElementById('start-scan-btn');
 
-            const codeReader = new BrowserMultiFormatReader();
+            statusEl.classList.remove('hidden'); // 显示状态
 
-            /**
-             * 显示模态框 (用于显示结果或错误)
-             */
-            function showModal(title, text) {
-                modalTitle.textContent = title;
-                modalContent.textContent = text;
-                modal.classList.remove('hidden');
-            }
-
-            /**
-             * 关闭模态框
-             */
-            closeModalBtn.onclick = () => {
-                modal.classList.add('hidden');
-            };
-            modal.onclick = (e) => {
-                if (e.target === modal) {
-                    modal.classList.add('hidden');
-                }
-            };
-
-            /**
-             * 在视频上绘制边框
-             */
-            function drawOverlays(results) {
-                overlay.innerHTML = '';
-
-                const videoRect = video.getBoundingClientRect();
-                const videoWidth = video.videoWidth;
-                const videoHeight = video.videoHeight;
-                
-                if (!videoWidth || !videoHeight) return;
-
-                const scaleX = videoRect.width / videoWidth;
-                const scaleY = videoRect.height / videoHeight;
-
-                results.forEach(result => {
-                    const points = result.resultPoints;
-
-                    const minX = Math.min(...points.map(p => p.x));
-                    const minY = Math.min(...points.map(p => p.y));
-                    const maxX = Math.max(...points.map(p => p.x));
-                    const maxY = Math.max(...points.map(p => p.y));
-                    
-                    const left = minX * scaleX;
-                    const top = minY * scaleY;
-                    const width = (maxX - minX) * scaleX;
-                    const height = (maxY - minY) * scaleY;
-
-                    const box = document.createElement('div');
-                    box.className = 'qr-box';
-                    box.style.left = `${left}px`;
-                    box.style.top = `${top}px`;
-                    box.style.width = `${width}px`;
-                    box.style.height = `${height}px`;
-
-                    const text = result.getText();
-                    box.onclick = (e) => {
-                        e.stopPropagation(); // 防止点击穿透
-                        showModal('扫描结果', text);
-                    };
-                    
-                    overlay.appendChild(box);
-                });
-            }
-
-            /**
-             * 循环扫描视频帧
-             */
-            async function scanFrame() {
-                if (video.readyState < video.HAVE_CURRENT_DATA) {
-                    return; 
-                }
-                
-                try {
-                    // 注意：这里我们不再需要 codeReader.decodeMultipleFromVideoElement(video)
-                    // 最新版本中，推荐使用 codeReader.decodeFromVideoElement(video) 
-                    // 并配合一个循环来获取多个结果，但 decodeMultiple 仍然可用
-                    const results = await codeReader.decodeMultipleFromVideoElement(video);
-                    drawOverlays(results);
-                    
-                } catch (err) {
-                    if (err instanceof NotFoundException) {
-                        drawOverlays([]); 
-                    } else {
-                        // 忽略其他错误，继续扫描
-                    }
-                }
-            }
-
-            /**
-             * 启动摄像头
-             */
-            async function startCamera() {
-                // 【修复】在用户点击后，显示状态文本
-                statusEl.classList.remove('hidden');
+            // 把摄像头启动逻辑单独放在一个函数里
+            async function startCameraOnly() {
                 statusEl.textContent = '正在请求摄像头权限...';
                 
                 try {
-                    const constraints = {
-                        video: { 
-                            facingMode: 'environment' 
-                        },
-                        audio: false
-                    };
-                    
+                    const constraints = { video: { facingMode: 'environment' }, audio: false };
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
                     
                     video.onplaying = () => {
-                        statusEl.textContent = '摄像头已启动，请对准二维码。';
-                        setInterval(scanFrame, 300); // 每 300ms 扫一次
+                        statusEl.textContent = '摄像头已启动，正在加载扫描库...';
+                        // 摄像头成功启动！
+                        // 现在通知“脚本2”可以开始工作了
+                        window.isCameraReady = true; 
                     };
 
                 } catch (err) {
                     console.error("摄像头启动失败:", err);
-                    statusEl.classList.remove('hidden'); // 确保显示错误
                     if (err.name === 'NotAllowedError') {
                         statusEl.textContent = '错误：用户拒绝了摄像头权限。';
                     } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
@@ -229,19 +96,126 @@
                     } else {
                         statusEl.textContent = `错误：摄像头启动失败 (${err.name})。`;
                     }
-                    startScanBtn.classList.remove('hidden'); // 【修复】允许用户重试
+                    startScanBtn.classList.remove('hidden'); // 允许用户重试
                 }
             }
 
-            // 【修复】
-            // 不再自动启动，而是等待按钮点击
+            // 按钮点击事件，这个监听器现在100%会添加成功
             startScanBtn.addEventListener('click', () => {
-                // 隐藏按钮，准备启动
                 startScanBtn.classList.add('hidden');
-                startCamera();
+                startCameraOnly(); // 调用只管摄像头的函数
             });
-
         });
+    </script>
+    
+    <script type="module">
+        // 【脚本 2：只管扫描】
+        // 这是一个模块脚本，它会加载外部库。
+        // 它只在摄像头成功启动后 (window.isCameraReady == true) 才开始扫描。
+
+        import { 
+            BrowserMultiFormatReader, 
+            NotFoundException 
+        } from 'https://unpkg.com/@zxing/library@0.21.0/esm/index.js';
+
+        // 假设库加载成功...
+        const codeReader = new BrowserMultiFormatReader();
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalContent = document.getElementById('modal-content');
+        const closeModalBtn = document.getElementById('close-modal');
+        const statusEl = document.getElementById('status'); // 获取状态元素
+
+        function showModal(title, text) {
+            modalTitle.textContent = title;
+            modalContent.textContent = text;
+            modal.classList.remove('hidden');
+        }
+
+        closeModalBtn.onclick = () => {
+            modal.classList.add('hidden');
+        };
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        };
+
+        function drawOverlays(results) {
+            overlay.innerHTML = '';
+            const videoRect = video.getBoundingClientRect();
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            
+            if (!videoWidth || !videoHeight) return;
+
+            const scaleX = videoRect.width / videoWidth;
+            const scaleY = videoRect.height / videoHeight;
+
+            results.forEach(result => {
+                const points = result.resultPoints;
+                const minX = Math.min(...points.map(p => p.x));
+                const minY = Math.min(...points.map(p => p.y));
+                const maxX = Math.max(...points.map(p => p.x));
+                const maxY = Math.max(...points.map(p => p.y));
+                
+                const left = minX * scaleX;
+                const top = minY * scaleY;
+                const width = (maxX - minX) * scaleX;
+                const height = (maxY - minY) * scaleY;
+
+                const box = document.createElement('div');
+                box.className = 'qr-box';
+                box.style.left = `${left}px`;
+                box.style.top = `${top}px`;
+                box.style.width = `${width}px`;
+                box.style.height = `${height}px`;
+
+                const text = result.getText();
+                box.onclick = (e) => {
+                    e.stopPropagation();
+                    showModal('扫描结果', text);
+                };
+                
+                overlay.appendChild(box);
+            });
+        }
+
+        async function scanFrame() {
+            if (video.readyState < video.HAVE_CURRENT_DATA) {
+                return; 
+            }
+            
+            try {
+                const results = await codeReader.decodeMultipleFromVideoElement(video);
+                drawOverlays(results);
+                
+            } catch (err) {
+                if (err instanceof NotFoundException) {
+                    drawOverlays([]); 
+                } else {
+                    // 忽略
+                }
+            }
+        }
+
+        // 设置一个定时器，不断检查摄像头是否准备就绪
+        const scanInterval = setInterval(() => {
+            if (window.isCameraReady) {
+                // 摄像头好了！
+                // 停止这个检查定时器
+                clearInterval(scanInterval);
+                
+                // 更新状态
+                statusEl.textContent = '扫描库加载成功，请对准二维码。';
+                
+                // 真正开始循环扫描
+                setInterval(scanFrame, 300);
+            }
+        }, 200); // 每 200ms 检查一次
+
     </script>
 </body>
 </html>
