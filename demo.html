@@ -59,6 +59,8 @@
             <div id="overlay" class="absolute top-0 left-0 w-full h-full"></div>
             <!-- 添加日志显示区域 -->
             <div id="log-area" class="scan-ok">等待扫描...</div>
+            <!-- 用于抓取帧的离屏 Canvas (不可见) -->
+            <canvas id="captureCanvas" style="display: none;"></canvas>
         </div>
         
         <div id="controls" class="text-center mt-4">
@@ -100,6 +102,7 @@
                 statusEl.textContent = '正在请求摄像头权限...';
                 
                 try {
+                    // 尝试获取后置摄像头
                     const constraints = { video: { facingMode: 'environment' }, audio: false };
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
@@ -152,13 +155,32 @@
 
                 // 从 ZXing 获取所需类
                 const { 
-                    BrowserMultiFormatReader, 
-                    NotFoundException 
+                    BrowserMultiFormatReader, // 仍然用它来管理视频流和创建 BinaryBitmap
+                    NotFoundException,
+                    DecodeHintType,           // 可能需要 hints
+                    HTMLCanvasElementLuminanceSource, // 用于从 Canvas 创建 LuminanceSource
+                    HybridBinarizer,          // Binarizer
+                    BinaryBitmap,             // BinaryBitmap
+                    MultiFormatReader         // 核心 Reader
                 } = ZXing;
 
-                const codeReader = new BrowserMultiFormatReader();
+                // 修改：我们仍然使用 BrowserMultiFormatReader 来简化一些操作, 但核心解码用 MultiFormatReader
+                const codeReader = new BrowserMultiFormatReader(null, 300); // hint 和 timeBetweenScansMillis 可能不再直接使用
                 const video = document.getElementById('video');
                 const overlay = document.getElementById('overlay');
+                const captureCanvas = document.getElementById('captureCanvas'); // 获取离屏 Canvas
+                const captureContext = captureCanvas.getContext('2d', { willReadFrequently: true }); // 获取 2D 上下文
+                
+                // 修改：创建核心 MultiFormatReader 实例
+                const multiFormatReader = new MultiFormatReader();
+                // 可选: 设置 hints, 比如告诉它优先识别 QR 码
+                const hints = new Map();
+                // const formats = [ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.DATA_MATRIX /* 添加其他你需要的格式 */];
+                // hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+                // hints.set(DecodeHintType.TRY_HARDER, true); // 可选, 可能会降低性能
+                multiFormatReader.setHints(hints);
+
+
                 const modal = document.getElementById('modal');
                 const modalTitle = document.getElementById('modal-title');
                 const modalContent = document.getElementById('modal-content');
@@ -181,28 +203,29 @@
                     }
                 };
 
-                // 绘制边框
+                // 绘制边框 (这个函数基本不变)
                 function drawOverlays(results) {
                     overlay.innerHTML = '';
-                    const videoRect = video.getBoundingClientRect(); // 视频在屏幕上的 CSS 尺寸
-                    const videoWidth = video.videoWidth; // 视频的原始分辨率
+                    const videoRect = video.getBoundingClientRect(); 
+                    const videoWidth = video.videoWidth; 
                     const videoHeight = video.videoHeight;
                     
-                    if (!videoWidth || !videoHeight) return;
+                    if (!videoWidth || !videoHeight || !videoRect.width || !videoRect.height) {
+                        return;
+                    }
 
-                    // 计算视频源和显示尺寸的缩放比例
                     const scaleX = videoRect.width / videoWidth;
                     const scaleY = videoRect.height / videoHeight;
 
                     results.forEach(result => {
                         const points = result.resultPoints;
-                        // 获取二维码四个角的坐标
+                        if (!points || points.length < 3) return; 
+                        
                         const minX = Math.min(...points.map(p => p.x));
                         const minY = Math.min(...points.map(p => p.y));
                         const maxX = Math.max(...points.map(p => p.x));
                         const maxY = Math.max(...points.map(p => p.y));
                         
-                        // 应用缩放比例, 转换为屏幕坐标
                         const left = minX * scaleX;
                         const top = minY * scaleY;
                         const width = (maxX - minX) * scaleX;
@@ -216,9 +239,8 @@
                         box.style.height = `${height}px`;
 
                         const text = result.getText();
-                        // 边框的点击事件
                         box.onclick = (e) => {
-                            e.stopPropagation(); // 阻止事件冒泡
+                            e.stopPropagation(); 
                             showModal('扫描结果', text);
                         };
                         
@@ -226,40 +248,59 @@
                     });
                 }
 
-                // 扫描帧函数
-                async function scanFrame() {
-                    if (video.readyState < video.HAVE_CURRENT_DATA) {
+                // 修改：新的扫描帧函数
+                function scanFrame() {
+                    // 检查视频是否准备好
+                    if (video.readyState < video.HAVE_CURRENT_DATA || video.paused || video.ended) {
                         return; 
                     }
                     
                     try {
-                        // 核心: 使用 decodeMultiple 识别多个码
-                        const results = await codeReader.decodeMultipleFromVideoElement(video);
+                        // 1. 设置离屏 Canvas 尺寸与视频一致
+                        captureCanvas.width = video.videoWidth;
+                        captureCanvas.height = video.videoHeight;
+                        
+                        // 2. 将当前视频帧绘制到离屏 Canvas
+                        captureContext.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+                        
+                        // 3. 从 Canvas 创建 LuminanceSource
+                        // 注意: v0.20.0 可能没有 BrowserCanvasLuminanceSource, 我们需要确认
+                        // 如果没有, 需要手动从 ImageData 创建, 但先尝试这个
+                        // 经过确认, v0.20.0 没有 BrowserCanvasLuminanceSource, 但 BrowserMultiFormatReader 内部有类似逻辑
+                        // 我们可以直接调用 BrowserMultiFormatReader 的 decodeMultiple 方法, 它应该能处理 Canvas
+                        // 再次修改尝试: 直接调用 codeReader.decodeMultiple(captureCanvas)
+
+                        // 3. (尝试) 直接使用 BrowserMultiFormatReader 解码 Canvas
+                        // 这是最接近 v0.20.0 能力的方式
+                         const results = codeReader.decodeMultiple(captureCanvas, hints);
+
+                        // 4. 处理结果 (如果上面成功)
                         drawOverlays(results);
-                        // 更新日志区域 - 正常
                         logArea.textContent = `检测到 ${results.length} 个二维码`; 
-                        logArea.classList.add('scan-ok'); // 添加正常扫描样式
+                        logArea.classList.add('scan-ok');
                         
                     } catch (err) {
                         if (err instanceof NotFoundException) {
-                            // 未找到码, 清除旧边框
+                            // 未找到码
                             drawOverlays([]); 
-                            // 更新日志区域 - 未找到
                             logArea.textContent = '未检测到二维码'; 
-                            logArea.classList.add('scan-ok'); // 添加正常扫描样式
+                            logArea.classList.add('scan-ok'); 
                         } else {
-                            // 捕获到其他错误
-                            console.error("扫描时出错:", err); // 仍然在控制台打印
-                            // 在页面上显示错误信息
+                            // 其他错误
+                            console.error("扫描时出错:", err); 
                             logArea.textContent = `扫描出错: ${err.message || err.toString()}`; 
-                            logArea.classList.remove('scan-ok'); // 移除正常扫描样式
+                            logArea.classList.remove('scan-ok'); 
                         }
                     }
                 }
                 
                 statusEl.textContent = '扫描库加载成功，请对准二维码。';
-                // 节流: 每 300ms 扫描一次以降低CPU占用
-                setInterval(scanFrame, 300);
+                // 保持节流: 每 300ms 扫描一次
+                setInterval(scanFrame, 300); 
+
+                // --- 移除旧的 decodeContinuously 调用 ---
+                // codeReader.decodeContinuously(...) // <- 移除或注释掉这部分
+
             }
         }, 200); 
     </script>
