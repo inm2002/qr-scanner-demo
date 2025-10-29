@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多二维码扫描Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 
+      cdnjs 上的版本是 0.20.0。
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-library/0.20.0/zxing.min.js"></script>
+    
+    <style>
+        /* 强制视频在最底层 */
+        video {
+            z-index: -1;
+        }
+        /* 识别框样式 */
+        .qr-box {
+            position: absolute;
+            border: 3px solid #00FF00;
+            background-color: rgba(0, 255, 0, 0.1);
+            box-sizing: border-box;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            z-index: 10;
+        }
+        .qr-box:hover {
+            background-color: rgba(0, 255, 0, 0.3);
+        }
+        /* 隐藏页面滚动条 */
+        body {
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div id="app" class="w-full max-w-2xl mx-auto">
+        <h1 class="text-2xl font-bold text-center mb-4">多二维码扫描</h1>
+        
+        <div id="scanner-container" class="relative w-full aspect-square bg-gray-800 rounded-lg overflow-hidden shadow-lg mx-auto">
+            <video id="video" playsinline autoplay muted class="w-full h-full object-cover"></video>
+            <div id="overlay" class="absolute top-0 left-0 w-full h-full"></div>
+        </div>
+        
+        <p id="status" class="text-center text-gray-400 mt-4">正在请求摄像头权限...</p>
+    </div>
+
+    <!-- 结果显示模态框 -->
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+            <h3 id="modal-title" class="text-lg font-semibold mb-4">扫描结果</h3>
+            <div id="modal-content" class="bg-gray-700 p-3 rounded text-sm break-words max-h-40 overflow-y-auto">
+            </div>
+            <button id="close-modal" class="mt-6 w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded transition">
+                关闭
+            </button>
+        </div>
+    </div>
+
+
+    <script>
+        window.addEventListener('load', () => {
+
+            const video = document.getElementById('video');
+            const overlay = document.getElementById('overlay');
+            const statusEl = document.getElementById('status');
+            const modal = document.getElementById('modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalContent = document.getElementById('modal-content');
+            const closeModalBtn = document.getElementById('close-modal');
+            
+            // 检查 ZXing 库是否加载成功
+            if (typeof ZXing === 'undefined') {
+                console.error('ZXing 库未能加载。');
+                showModal('加载失败', '错误：扫描库未能加载，请检查网络连接并刷新页面。');
+                statusEl.textContent = '错误：扫描库未能加载。';
+                return;
+            }
+
+            // 注意：从 cdnjs 加载时，库对象可能在 ZXing.Library 下
+            // 这个检查逻辑是正确的
+            const ZXingCore = typeof ZXing.BrowserMultiFormatReader === 'function' ? ZXing : ZXing.Library;
+
+            if (typeof ZXingCore.BrowserMultiFormatReader === 'undefined') {
+                 console.error('ZXing 库结构不正确。');
+                 showModal('加载失败', '错误：扫描库结构不正确。');
+                 statusEl.textContent = '错误：扫描库结构不正确。';
+                 return;
+            }
+
+            const { BrowserMultiFormatReader, NotFoundException } = ZXingCore;
+            const codeReader = new BrowserMultiFormatReader();
+
+            /**
+             * 显示模态框 (用于显示结果或错误)
+             */
+            function showModal(title, text) {
+                modalTitle.textContent = title;
+                modalContent.textContent = text;
+                modal.classList.remove('hidden');
+            }
+
+            /**
+             * 关闭模态框
+             */
+            closeModalBtn.onclick = () => {
+                modal.classList.add('hidden');
+            };
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                }
+            };
+
+            /**
+             * 在视频上绘制边框
+             */
+            function drawOverlays(results) {
+                overlay.innerHTML = '';
+
+                const videoRect = video.getBoundingClientRect();
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                
+                if (!videoWidth || !videoHeight) return;
+
+                const scaleX = videoRect.width / videoWidth;
+                const scaleY = videoRect.height / videoHeight;
+
+                results.forEach(result => {
+                    const points = result.resultPoints;
+
+                    const minX = Math.min(...points.map(p => p.x));
+                    const minY = Math.min(...points.map(p => p.y));
+                    const maxX = Math.max(...points.map(p =>
+
