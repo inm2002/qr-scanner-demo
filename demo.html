@@ -7,7 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- 
-    在下面的 <script type="module"> 标签中直接导入 (import) 这个库。
+      【最终修复-现代版】
+      我们不再需要从 <head> 加载任何 zxing.min.js 文件。
+      我们将在下面的 <script type="module"> 标签中直接导入 (import) 这个库。
     -->
     
     <style>
@@ -44,7 +46,17 @@
             <div id="overlay" class="absolute top-0 left-0 w-full h-full"></div>
         </div>
         
-        <p id="status" class="text-center text-gray-400 mt-4">正在请求摄像头权限...</p>
+        <!-- 
+          【修复】
+          添加一个“开始”按钮，并默认隐藏状态文本。
+          这是解决手机浏览器权限问题的关键。
+        -->
+        <div id="controls" class="text-center mt-4">
+            <button id="start-scan-btn" class="w-full max-w-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded transition text-lg">
+                开始扫描
+            </button>
+            <p id="status" class="text-center text-gray-400 mt-4 hidden">正在请求摄像头权限...</p>
+        </div>
     </div>
 
     <!-- 结果显示模态框 -->
@@ -86,6 +98,7 @@
             const modalTitle = document.getElementById('modal-title');
             const modalContent = document.getElementById('modal-content');
             const closeModalBtn = document.getElementById('close-modal');
+            const startScanBtn = document.getElementById('start-scan-btn'); // 【修复】获取按钮
             
             // 我们不再需要检查 typeof ZXing，因为 import 成功就意味着库已加载。
             // 如果 import 失败，会在控制台看到一个模块加载错误。
@@ -186,6 +199,10 @@
              * 启动摄像头
              */
             async function startCamera() {
+                // 【修复】在用户点击后，显示状态文本
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = '正在请求摄像头权限...';
+                
                 try {
                     const constraints = {
                         video: { 
@@ -204,17 +221,25 @@
 
                 } catch (err) {
                     console.error("摄像头启动失败:", err);
+                    statusEl.classList.remove('hidden'); // 确保显示错误
                     if (err.name === 'NotAllowedError') {
                         statusEl.textContent = '错误：用户拒绝了摄像头权限。';
                     } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
                         statusEl.textContent = '错误：找不到后置摄像头。';
                     } else {
-                        statusEl.textContent = `错误：摄像头启动失败 (${err.message})。`;
+                        statusEl.textContent = `错误：摄像头启动失败 (${err.name})。`;
                     }
+                    startScanBtn.classList.remove('hidden'); // 【修复】允许用户重试
                 }
             }
 
-            startCamera();
+            // 【修复】
+            // 不再自动启动，而是等待按钮点击
+            startScanBtn.addEventListener('click', () => {
+                // 隐藏按钮，准备启动
+                startScanBtn.classList.add('hidden');
+                startCamera();
+            });
 
         });
     </script>
