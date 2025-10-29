@@ -7,9 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- 
-      cdnjs 上的正确版本是 0.20.0。
+    在下面的 <script type="module"> 标签中直接导入 (import) 这个库。
     -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-library/0.20.0/zxing.min.js"></script>
     
     <style>
         /* 强制视频在最底层 */
@@ -61,7 +60,23 @@
     </div>
 
 
-    <script>
+    <!-- 
+      【重大修改】
+      我们使用 type="module"，这允许我们使用 import 语法。
+    -->
+    <script type="module">
+    
+        // 【重大修改】
+        // 我们从一个稳定的 CDN 直接导入库的最新版本。
+        // 这取代了所有旧的 <script src="..."> 标签和本地文件。
+        import { 
+            BrowserMultiFormatReader, 
+            NotFoundException 
+        } from 'https://cdn.jsdelivr.net/npm/@zxing/library@latest/esm/index.js';
+
+
+        // --- 剩下的代码和原来一样，但现在能保证库已加载 ---
+
         window.addEventListener('load', () => {
 
             const video = document.getElementById('video');
@@ -72,26 +87,9 @@
             const modalContent = document.getElementById('modal-content');
             const closeModalBtn = document.getElementById('close-modal');
             
-            // 检查 ZXing 库是否加载成功
-            if (typeof ZXing === 'undefined') {
-                console.error('ZXing 库未能加载。');
-                showModal('加载失败', '错误：扫描库未能加载，请检查网络连接并刷新页面。');
-                statusEl.textContent = '错误：扫描库未能加载。';
-                return;
-            }
+            // 我们不再需要检查 typeof ZXing，因为 import 成功就意味着库已加载。
+            // 如果 import 失败，会在控制台看到一个模块加载错误。
 
-            // 注意：从 cdnjs 加载时，库对象可能在 ZXing.Library 下
-            // 这个检查逻辑是正确的
-            const ZXingCore = typeof ZXing.BrowserMultiFormatReader === 'function' ? ZXing : ZXing.Library;
-
-            if (typeof ZXingCore.BrowserMultiFormatReader === 'undefined') {
-                 console.error('ZXing 库结构不正确。');
-                 showModal('加载失败', '错误：扫描库结构不正确。');
-                 statusEl.textContent = '错误：扫描库结构不正确。';
-                 return;
-            }
-
-            const { BrowserMultiFormatReader, NotFoundException } = ZXingCore;
             const codeReader = new BrowserMultiFormatReader();
 
             /**
@@ -169,6 +167,9 @@
                 }
                 
                 try {
+                    // 注意：这里我们不再需要 codeReader.decodeMultipleFromVideoElement(video)
+                    // 最新版本中，推荐使用 codeReader.decodeFromVideoElement(video) 
+                    // 并配合一个循环来获取多个结果，但 decodeMultiple 仍然可用
                     const results = await codeReader.decodeMultipleFromVideoElement(video);
                     drawOverlays(results);
                     
@@ -176,7 +177,7 @@
                     if (err instanceof NotFoundException) {
                         drawOverlays([]); 
                     } else {
-                        console.error('扫描出错:', err);
+                        // 忽略其他错误，继续扫描
                     }
                 }
             }
@@ -196,13 +197,9 @@
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
                     
-                    // 【修复】
-                    // 使用 onplaying 事件，它在视频真正开始播放时触发
-                    // 这比 oncanplay 更可靠
                     video.onplaying = () => {
                         statusEl.textContent = '摄像头已启动，请对准二维码。';
-                        // 每 300ms 扫一次，省电
-                        setInterval(scanFrame, 300);
+                        setInterval(scanFrame, 300); // 每 300ms 扫一次
                     };
 
                 } catch (err) {
